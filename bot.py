@@ -566,64 +566,81 @@ async def text_handler(update: Update, ctx):
 # ── Запуск ─────────────────────────────────────────────────────────
 
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    import asyncio
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("setadmin", set_admin))
-    app.add_handler(CommandHandler("bookings", admin_bookings))
-    app.add_handler(CommandHandler("reply", admin_reply))
-    app.add_handler(CallbackQueryHandler(cancel_book, pattern=r"^cl_\d+$"))
-    app.add_handler(CallbackQueryHandler(admin_about, pattern=r"^adm_\d+$"))
+    async def run():
+        app = Application.builder().token(BOT_TOKEN).build()
 
-    book_conv = ConversationHandler(
-        entry_points=[CommandHandler("book", book_start),
-                      MessageHandler(filters.Regex("^📅 Бронь$"), book_start),
-                      CallbackQueryHandler(book_from_house, pattern=r"^h_")],
-        states={
-            SEL_HOUSE: [CallbackQueryHandler(sel_house)],
-            SEL_CHECKIN: [CallbackQueryHandler(sel_checkin, pattern=r"^(ci_|cal_ci_|cancel)")],
-            SEL_CHECKOUT: [CallbackQueryHandler(sel_checkout, pattern=r"^(co_|cal_co_|cancel)")],
-            SEL_SERVICES: [CallbackQueryHandler(sel_services)],
-            CONFIRM: [CallbackQueryHandler(confirm)],
-            NAME: [
-                MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_name),
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("setadmin", set_admin))
+        app.add_handler(CommandHandler("bookings", admin_bookings))
+        app.add_handler(CommandHandler("reply", admin_reply))
+        app.add_handler(CallbackQueryHandler(cancel_book, pattern=r"^cl_\d+$"))
+        app.add_handler(CallbackQueryHandler(admin_about, pattern=r"^adm_\d+$"))
+
+        book_conv = ConversationHandler(
+            entry_points=[CommandHandler("book", book_start),
+                          MessageHandler(filters.Regex("^📅 Бронь$"), book_start),
+                          CallbackQueryHandler(book_from_house, pattern=r"^h_")],
+            states={
+                SEL_HOUSE: [CallbackQueryHandler(sel_house)],
+                SEL_CHECKIN: [CallbackQueryHandler(sel_checkin, pattern=r"^(ci_|cal_ci_|cancel)")],
+                SEL_CHECKOUT: [CallbackQueryHandler(sel_checkout, pattern=r"^(co_|cal_co_|cancel)")],
+                SEL_SERVICES: [CallbackQueryHandler(sel_services)],
+                CONFIRM: [CallbackQueryHandler(confirm)],
+                NAME: [
+                    MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_name),
+                ],
+                PHONE: [
+                    MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone),
+                ],
+                COMMENT: [
+                    MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment),
+                    CommandHandler("skip", skip_comment),
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", book_cancel)],
+            per_message=False,
+        )
+        app.add_handler(book_conv)
+
+        admin_conv = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.Regex("^📞 Связь с админом$"), admin_connect_menu),
+                CallbackQueryHandler(admin_about, pattern=r"^adm_\d+$"),
             ],
-            PHONE: [
-                MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone),
-            ],
-            COMMENT: [
-                MessageHandler(filters.Regex("^❌ Отмена$"), book_cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment),
-                CommandHandler("skip", skip_comment),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", book_cancel)],
-        per_message=False,
-    )
-    app.add_handler(book_conv)
+            states={
+                ADMIN_MSG: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, admin_send_msg),
+                    MessageHandler(filters.Regex("^❌ Отмена$"), admin_msg_cancel),
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", admin_msg_cancel)],
+            per_message=False,
+        )
+        app.add_handler(admin_conv)
 
-    admin_conv = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^📞 Связь с админом$"), admin_connect_menu),
-            CallbackQueryHandler(admin_about, pattern=r"^adm_\d+$"),
-        ],
-        states={
-            ADMIN_MSG: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_send_msg),
-                MessageHandler(filters.Regex("^❌ Отмена$"), admin_msg_cancel),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", admin_msg_cancel)],
-        per_message=False,
-    )
-    app.add_handler(admin_conv)
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+        logger.info("🤖 Бот запущен!")
 
-    logger.info("🤖 Бот запущен!")
-    app.run_polling(drop_pending_updates=True)
+        await app.initialize()
+        await app.updater.start_polling()
+        logger.info("✅ Бот работает 24/7")
+        await asyncio.Event().wait()
+
+    while True:
+        try:
+            asyncio.run(run())
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"⚠️ Бот упал: {e}. Перезапуск через 5 секунд...")
+            import time
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
